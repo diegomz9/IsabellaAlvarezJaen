@@ -481,7 +481,28 @@
     text-transform: uppercase; color: var(--accent);
     margin-top: 4px;
   }
-  .modal-controls { display: flex; gap: 16px; align-items: center; }
+  .modal-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+  .modal-zoom-group {
+    display: flex; align-items: center;
+    border: 1px solid rgba(196,145,74,0.35);
+  }
+  .modal-zoom-btn {
+    background: none; border: none; border-right: 1px solid rgba(196,145,74,0.2);
+    color: var(--warm-gray);
+    font-family: 'Josefin Sans', sans-serif;
+    font-size: 1.1rem; line-height: 1;
+    width: 38px; height: 38px;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: none; transition: background 0.2s, color 0.2s;
+  }
+  .modal-zoom-btn:last-child { border-right: none; }
+  .modal-zoom-btn:hover { background: rgba(196,145,74,0.12); color: var(--cream); }
+  .modal-zoom-label {
+    font-size: 0.55rem; letter-spacing: 0.15em;
+    color: var(--warm-gray); padding: 0 10px; min-width: 40px; text-align: center;
+    font-family: 'Josefin Sans', sans-serif;
+  }
 
   .modal-btn {
     background: none; border: 1px solid rgba(196,145,74,0.35);
@@ -500,11 +521,23 @@
   .modal-btn-close:hover { background: var(--accent-light); border-color: var(--accent-light); }
 
   .modal-body {
-    flex: 1; overflow: hidden; position: relative;
+    flex: 1; overflow: auto; position: relative;
+    display: flex; align-items: flex-start; justify-content: center;
   }
-  .modal-body iframe,
+  .modal-zoom-wrapper {
+    transform-origin: top center;
+    transition: transform 0.2s ease;
+    width: 100%;
+    min-height: 100%;
+    display: flex;
+  }
+  .modal-body iframe {
+    width: 100%; min-height: 80vh;
+    border: none; display: block; flex-shrink: 0;
+    background: var(--charcoal);
+  }
   .modal-body img {
-    width: 100%; height: 100%;
+    width: 100%; height: auto;
     border: none; display: block;
     object-fit: contain; background: var(--charcoal);
   }
@@ -826,6 +859,13 @@
       <p class="modal-title" id="modalTitle"></p>
     </div>
     <div class="modal-controls">
+      <!-- Zoom group -->
+      <div class="modal-zoom-group">
+        <button class="modal-zoom-btn" id="zoomOut" title="Reducir">−</button>
+        <span class="modal-zoom-label" id="zoomLabel">100%</span>
+        <button class="modal-zoom-btn" id="zoomIn" title="Ampliar">＋</button>
+        <button class="modal-zoom-btn" id="zoomReset" title="Restablecer" style="font-size:0.55rem;letter-spacing:0.1em;width:auto;padding:0 10px;">↺</button>
+      </div>
       <a href="#" id="modalDownload" class="modal-btn" download target="_blank">
         ↓ Descargar
       </a>
@@ -834,9 +874,11 @@
       </button>
     </div>
   </div>
-  <div class="modal-body">
+  <div class="modal-body" id="modalBody">
     <div class="modal-loader" id="modalLoader">Cargando proyecto…</div>
-    <iframe id="modalIframe" src="" title="Proyecto" onload="document.getElementById('modalLoader').classList.add('hidden')"></iframe>
+    <div class="modal-zoom-wrapper" id="zoomWrapper">
+      <iframe id="modalIframe" src="" title="Proyecto" onload="document.getElementById('modalLoader').classList.add('hidden')"></iframe>
+    </div>
   </div>
 </div>
 
@@ -929,17 +971,55 @@
   var modalLoader  = document.getElementById('modalLoader');
   var modalDl      = document.getElementById('modalDownload');
   var modalClose   = document.getElementById('modalClose');
+  var zoomWrapper  = document.getElementById('zoomWrapper');
+  var zoomLabel    = document.getElementById('zoomLabel');
+  var zoomInBtn    = document.getElementById('zoomIn');
+  var zoomOutBtn   = document.getElementById('zoomOut');
+  var zoomResetBtn = document.getElementById('zoomReset');
+
+  var zoomLevel = 1;
+  var zoomStep  = 0.15;
+  var zoomMin   = 0.3;
+  var zoomMax   = 3;
+
+  // Start smaller on mobile so the content fits the screen
+  function defaultZoom() {
+    return window.innerWidth < 900 ? 0.5 : 1;
+  }
+
+  function applyZoom() {
+    zoomWrapper.style.transform = 'scale(' + zoomLevel + ')';
+    zoomWrapper.style.transformOrigin = 'top center';
+    // Expand wrapper height so scrolling works correctly after scale
+    zoomWrapper.style.marginBottom = (zoomLevel > 1 ? (zoomLevel - 1) * 100 + '%' : '0');
+    zoomLabel.textContent = Math.round(zoomLevel * 100) + '%';
+  }
+
+  zoomInBtn.addEventListener('click', function() {
+    zoomLevel = Math.min(zoomMax, zoomLevel + zoomStep);
+    applyZoom();
+  });
+  zoomOutBtn.addEventListener('click', function() {
+    zoomLevel = Math.max(zoomMin, zoomLevel - zoomStep);
+    applyZoom();
+  });
+  zoomResetBtn.addEventListener('click', function() {
+    zoomLevel = defaultZoom();
+    applyZoom();
+  });
 
   function openModal(src, title, meta) {
-    modalTitle.textContent  = title || '';
-    modalMeta.textContent   = meta  || '';
+    modalTitle.textContent = title || '';
+    modalMeta.textContent  = meta  || '';
     modalLoader.classList.remove('hidden');
     modalDl.href = src;
-    // For PDFs use Google Docs viewer so they render inline cross-browser
     var isPDF = src.toLowerCase().endsWith('.pdf');
     modalIframe.src = isPDF
       ? 'https://docs.google.com/gview?embedded=true&url=' + encodeURIComponent(window.location.origin + '/' + src)
       : src;
+    // Reset zoom each time, mobile starts smaller
+    zoomLevel = defaultZoom();
+    applyZoom();
     modal.classList.add('open');
     document.body.style.overflow = 'hidden';
   }
@@ -965,18 +1045,19 @@
 
   modalClose.addEventListener('click', closeModal);
 
-  // Close on backdrop click (outside modal-header/body is the modal itself)
   modal.addEventListener('click', function(e) {
     if (e.target === modal) closeModal();
   });
 
-  // Close on Escape key
   document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
+    if (!modal.classList.contains('open')) return;
+    if (e.key === 'Escape') closeModal();
+    if (e.key === '+' || e.key === '=') { zoomLevel = Math.min(zoomMax, zoomLevel + zoomStep); applyZoom(); }
+    if (e.key === '-')                   { zoomLevel = Math.max(zoomMin, zoomLevel - zoomStep); applyZoom(); }
   });
 
   // Add cursor hover to modal buttons
-  [modalClose, modalDl].forEach(function(el) {
+  [modalClose, modalDl, zoomInBtn, zoomOutBtn, zoomResetBtn].forEach(function(el) {
     el.addEventListener('mouseenter', function() { ring.classList.add('hover'); });
     el.addEventListener('mouseleave', function() { ring.classList.remove('hover'); });
   });
